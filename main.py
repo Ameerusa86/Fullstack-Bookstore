@@ -1,5 +1,12 @@
 from utils import database
-from utils.database import get_connection
+from fastapi import FastAPI
+from pydantic import BaseModel
+from typing import List
+
+app = FastAPI()
+
+# Ensure the table exists when the application starts
+database.create_table()
 
 USER_CHOICE = """
 ENTER:
@@ -32,19 +39,7 @@ def menu():
 def prompt_add_book():
     name = input("Enter the name of the book: ").strip()
     author = input("Enter the author of the book: ").strip()
-    add_book(name, author)
-
-
-def add_book(name, author):
-    """Add a new book to the database."""
-    connection = get_connection()
-    cursor = connection.cursor()
-    cursor.execute(
-        "INSERT INTO books (name, author, [read]) VALUES (?, ?, 0)", (name, author)
-    )
-    connection.commit()
-    connection.close()
-    print(f"Book '{name}' by {author} added to the database.")
+    database.add_book(name, author)
 
 
 def list_books():
@@ -67,6 +62,38 @@ def prompt_delete_book():
     database.delete_book(name)
 
 
+# FastAPI models
+class Book(BaseModel):
+    name: str
+    author: str
+
+
+@app.post("/books")
+def add_book(book: Book):
+    """Add a new book via API."""
+    database.add_book(book.name, book.author)
+    return {"message": f"Book '{book.name}' by {book.author} added."}
+
+
+@app.get("/books", response_model=List[Book])
+def get_books():
+    """List all books via API."""
+    return database.get_all_books()
+
+
+@app.put("/books/{name}")
+def mark_as_read(name: str):
+    """Mark a book as read via API."""
+    database.mark_book_as_read(name)
+    return {"message": f"Book '{name}' marked as read."}
+
+
+@app.delete("/books/{name}")
+def delete_a_book(name: str):
+    """Delete a book via API."""
+    database.delete_book(name)
+    return {"message": f"Book '{name}' deleted."}
+
+
 if __name__ == "__main__":
-    database.create_table()  # Ensure the table exists
     menu()
