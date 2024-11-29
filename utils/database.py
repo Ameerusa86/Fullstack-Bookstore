@@ -1,7 +1,5 @@
 import pyodbc
-import logging
 
-logging.basicConfig(level=logging.INFO)
 
 def get_connection():
     """Establish and return a connection to the SQL Server database."""
@@ -52,19 +50,17 @@ def add_book(name, author):
     connection = get_connection()
     cursor = connection.cursor()
     try:
-        # Insert the book into the database
         cursor.execute(
             "INSERT INTO myBooks (name, author, [read]) VALUES (?, ?, 0)", (name, author)
         )
         connection.commit()
-        return {"message": f"Book '{name}' by {author} added to the database."}
+        print(f"Book '{name}' by {author} added to the database.")
     except pyodbc.IntegrityError:
-        return {"error": f"Book '{name}' by {author} already exists in the database."}
+        print(f"Book '{name}' by {author} already exists in the database.")
     except pyodbc.Error as e:
-        return {"error": f"Database error: {str(e)}"}
+        print("Error adding book:", e)
     finally:
         connection.close()
-
 
 
 
@@ -73,20 +69,15 @@ def get_all_books():
     connection = get_connection()
     cursor = connection.cursor()
     try:
-        cursor.execute("SELECT id, name, author, [read] FROM myBooks")
+        cursor.execute("SELECT name, author, [read] FROM myBooks")
         books = [
-            {
-                "id": row[0],  # Include the id field
-                "name": row[1],
-                "author": row[2],
-                "read": bool(row[3]),  # Convert BIT to bool
-            }
+            {"name": row[0], "author": row[1], "read": bool(row[2])}
             for row in cursor.fetchall()
         ]
         return books
     except pyodbc.Error as e:
         print("Error retrieving books:", e)
-        return {"error": "Error fetching books."}
+        return []
     finally:
         connection.close()
 
@@ -106,65 +97,16 @@ def mark_book_as_read(name):
         connection.close()
 
 
-def delete_book(book_id):
-    """Delete a book from the database by ID."""
+def delete_book(name):
+    """Delete a book from the database (case-insensitive)."""
     connection = get_connection()
     cursor = connection.cursor()
     try:
-        logging.info(f"Attempting to delete book with ID: {book_id}")
-        cursor.execute("DELETE FROM myBooks WHERE id = ?", (book_id,))
+        cursor.execute("DELETE FROM myBooks WHERE LOWER(name) = LOWER(?)", (name,))
         if cursor.rowcount > 0:
-            connection.commit()
-            logging.info(f"Book with ID {book_id} successfully deleted.")
-            return {"message": f"Book with ID {book_id} deleted from the database."}
+            print(f"Book '{name}' deleted.")
         else:
-            logging.warning(f"No book found with ID {book_id}.")
-            return {"error": f"No book found with ID {book_id}."}
-    except pyodbc.Error as e:
-        logging.error(f"Database error: {str(e)}")
-        return {"error": f"Database error: {str(e)}"}
-    finally:
-        connection.close()
-
-
-def update_book(book_id, updates):
-    """Update a book's details (name, author, and/or read status)."""
-    connection = get_connection()
-    cursor = connection.cursor()
-    try:
-        set_clauses = []
-        params = []
-
-        if "name" in updates:
-            set_clauses.append("name = ?")
-            params.append(updates["name"])
-        if "author" in updates:
-            set_clauses.append("author = ?")
-            params.append(updates["author"])
-        if "read" in updates:
-            set_clauses.append("[read] = ?")
-            params.append(updates["read"])
-
-        if not set_clauses:
-            logging.warning("No valid fields to update.")
-            return {"error": "No valid fields to update."}
-
-        params.append(book_id)
-        query = f"UPDATE myBooks SET {', '.join(set_clauses)} WHERE id = ?"
-        logging.info(f"Executing query: {query} with params: {params}")
-        cursor.execute(query, params)
-
-        if cursor.rowcount == 0:
-            logging.warning(f"No book found with ID {book_id}.")
-            return {"error": f"No book found with ID {book_id}."}
-
+            print(f"No book named '{name}' found.")
         connection.commit()
-        logging.info(f"Book with ID {book_id} updated successfully.")
-        return {"message": f"Book with ID {book_id} updated successfully."}
-    except pyodbc.Error as e:
-        logging.error(f"Database error: {str(e)}")
-        return {"error": f"Database error: {str(e)}"}
     finally:
         connection.close()
-
-
