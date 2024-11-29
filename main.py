@@ -1,99 +1,81 @@
-from utils import database
-from fastapi import FastAPI
+from fastapi import FastAPI, HTTPException
 from pydantic import BaseModel
-from typing import List
-
+from typing import List, Optional
+from utils import database
+# Initialize FastAPI
 app = FastAPI()
 
-# Ensure the table exists when the application starts
-database.create_table()
-
-USER_CHOICE = """
-ENTER:
-- 'a' to add a book
-- 'l' to list all books
-- 'r' to mark a book as read
-- 'd' to delete a book
-- 'q' to quit
-Your choice:
-"""
+# Ensure the table exists when the API starts
+# database.create_table()
 
 
-def menu():
-    """Main menu loop to interact with the user."""
-    user_input = input(USER_CHOICE)
-    while user_input != "q":
-        if user_input == "a":
-            prompt_add_book()
-        elif user_input == "l":
-            list_books()
-        elif user_input == "r":
-            prompt_read_book()
-        elif user_input == "d":
-            prompt_delete_book()
-        else:
-            print("Unknown command. Please try again.")
-        user_input = input(USER_CHOICE)
-
-
-def prompt_add_book():
-    name = input("Enter the name of the book: ").strip()
-    author = input("Enter the author of the book: ").strip()
-    database.add_book(name, author)
-
-
-def list_books():
-    books = database.get_all_books()
-    if not books:
-        print("No books found in the database.")
-    else:
-        for book in books:
-            read = "YES" if book["read"] else "NO"
-            print(f"{book['name']} by {book['author']}, read: {read}")
-
-
-def prompt_read_book():
-    name = input("Enter the name of the book you just finished reading: ").strip()
-    database.mark_book_as_read(name)
-
-
-def prompt_delete_book():
-    name = input("Enter the name of the book you want to delete: ").strip()
-    database.delete_book(name)
-
-
-# FastAPI models
+# Pydantic Models
 class Book(BaseModel):
     name: str
     author: str
 
 
-@app.post("/books")
-def add_book(book: Book):
-    """Add a new book via API."""
-    database.add_book(book.name, book.author)
+class BookResponse(Book):
+    id: int
+    read: bool
+
+class UpdateBook(BaseModel):
+    name: Optional[str] = None
+    author: Optional[str] = None
+    read: Optional[bool] = None
+
+
+@app.get("/")
+def root():
+    """Root endpoint for the API."""
+    return {"message": "Welcome to the Book Management API! Visit /docs for API documentation."}
+
+
+@app.post("/books", status_code=201)
+def create_book(book: Book):
+    """Add a new book to the database."""
+    result = database.add_book(book.name, book.author)
+    if "error" in result:
+        raise HTTPException(status_code=400, detail=result["error"])
     return {"message": f"Book '{book.name}' by {book.author} added."}
 
 
-@app.get("/books", response_model=List[Book])
-def get_books():
-    """List all books via API."""
-    return database.get_all_books()
+
+@app.get("/books", response_model=List[BookResponse])
+def list_books():
+    """Retrieve all books from the database."""
+    result = database.get_all_books()
+    if isinstance(result, list):  # Success
+        return result
+    raise HTTPException(status_code=500, detail="Error fetching books.")
 
 
-@app.put("/books/{name}")
-def mark_as_read(name: str):
-    """Mark a book as read via API."""
-    database.mark_book_as_read(name)
-    return {"message": f"Book '{name}' marked as read."}
+@app.put("/books/{book_id}")
+def update_book(book_id: int, book: UpdateBook):
+    """Update book details: name, author, and/or read status."""
+    updates = {}
+    if book.name:
+        updates["name"] = book.name
+    if book.author:
+        updates["author"] = book.author
+    if book.read is not None:
+        updates["read"] = 1 if book.read else 0
+
+    if not updates:
+        raise HTTPException(status_code=400, detail="No fields provided for update.")
+
+    result = database.update_book(book_id, updates)
+    if "error" in result:
+        raise HTTPException(status_code=404, detail=result["error"])
+
+    return {"message": f"Book with ID {book_id} updated successfully."}
 
 
-@app.delete("/books/{name}")
-def delete_a_book(name: str):
-    """Delete a book via API."""
-    database.delete_book(name)
-    return {"message": f"Book '{name}' deleted."}
 
-
-if __name__ == "__main__":
-    menu()
+@app.delete("/books/{book_id}")
+def delete_book(book_id: int):
+    """Delete a book from the database."""
+    result = database.delete_book(book_id)
+    if "error" in result:
+        raise HTTPException(status_code=404, detail=result["error"])
+    return {"message": f"Book with ID {book_id} deleted."}
